@@ -1,0 +1,6 @@
+{
+  "name": "Soukna – سوقنا | السوق الإلكتروني التونسي",
+  "description": "منصة التجارة الإلكترونية التونسية متعددة البائعين لمنتجات الحرفيين والتجار في كامل ولايات تونس",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

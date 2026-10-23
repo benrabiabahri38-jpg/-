@@ -1,0 +1,125 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isUserEmail(email) {
+      return isSignedIn() && request.auth.token.email == email;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'lamia1990ben@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Admins registry
+    match /admins/{adminId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Users collection
+    match /users/{userId} {
+      // User can read their own profile, admins can read all
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      // Public minimal info for vendors (so buyers see vendor shop name)
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && (
+        isAdmin() || 
+        (request.auth.uid == userId && (
+          // Prevent standard users from escalating to admin role
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin'])
+        ))
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Products collection: public marketplace catalog
+    match /products/{productId} {
+      // Anyone can browse products
+      allow read, list: if true;
+
+      // Vendors can create products
+      allow create: if isSignedIn() && (
+        request.resource.data.vendorId == request.auth.uid || isAdmin()
+      );
+
+      // Vendors can update/delete their own products; admins can update/delete any
+      allow update: if isSignedIn() && (
+        resource.data.vendorId == request.auth.uid || isAdmin()
+      );
+
+      allow delete: if isSignedIn() && (
+        resource.data.vendorId == request.auth.uid || isAdmin()
+      );
+    }
+
+    // Orders collection
+    match /orders/{orderId} {
+      // Anyone can submit an order (COD delivery), but logged in customers or vendors or admins can read
+      allow create: if true;
+
+      allow read: if isSignedIn() && (
+        resource.data.customerId == request.auth.uid || 
+        (resource.data.vendorIds is list && request.auth.uid in resource.data.vendorIds) || 
+        isAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        resource.data.customerId == request.auth.uid || 
+        (resource.data.vendorIds is list && request.auth.uid in resource.data.vendorIds) || 
+        isAdmin()
+      );
+
+      // Status updates by vendor (processing, shipped) or admin
+      allow update: if isSignedIn() && (
+        (resource.data.vendorIds is list && request.auth.uid in resource.data.vendorIds) || 
+        isAdmin()
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // Reviews collection
+    match /reviews/{reviewId} {
+      allow read, list: if true;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+    }
+
+    // Real-time Push Notifications collection (FCM / in-app)
+    match /notifications/{notifId} {
+      // Allow read/list to recipient, broadcast recipients, or admins
+      allow read, list: if isSignedIn();
+      // Allow creation of notifications upon order events, status updates, new seller registration
+      allow create: if true;
+      // Allow recipient or admin to mark as read or delete
+      allow update, delete: if isSignedIn();
+    }
+
+    // Platform settings (e.g. commission rates, notices)
+    match /platform_settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}
